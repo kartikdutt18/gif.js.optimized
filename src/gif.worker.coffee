@@ -8,13 +8,17 @@ renderFrame = (frame) ->
   else
     encoder.firstFrame = false
 
+  if frame.dispose?
+    encoder.setDispose frame.dispose
+
+  previousFrame = if frame.previousFrameData then frame.previousFrameData else null
   encoder.setTransparent frame.transparent
   encoder.setRepeat frame.repeat
   encoder.setDelay frame.delay
   encoder.setQuality frame.quality
   encoder.setDither frame.dither
   encoder.setGlobalPalette frame.globalPalette
-  encoder.addFrame frame.data
+  encoder.addFrame frame.data, previousFrame
   encoder.finish() if frame.last
   if frame.globalPalette == true
     frame.globalPalette = encoder.getGlobalPalette()
@@ -31,3 +35,5 @@ renderFrame = (frame) ->
     self.postMessage frame
 
 self.onmessage = (event) -> renderFrame event.data
+
+module.exports = renderFrame

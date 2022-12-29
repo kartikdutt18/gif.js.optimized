@@ -23,6 +23,7 @@ class GIF extends EventEmitter
 
     @options = {}
     @frames = []
+    @previousFrames = new Map()
 
     # TODO: compare by instance and not by data
     @groups = new Map() # for [data1, data1, data2, data1] @groups[data1] == [1, 3] and @groups[data2] = [2]
@@ -42,16 +43,7 @@ class GIF extends EventEmitter
   setOptions: (options) ->
     @setOption key, value for own key, value of options
 
-  addFrame: (image, options={}) ->
-    frame = {}
-    frame.transparent = @options.transparent
-    for key of frameDefaults
-      frame[key] = options[key] or frameDefaults[key]
-
-    # use the images width and height for options unless already set
-    @setOption 'width', image.width unless @options.width?
-    @setOption 'height', image.height unless @options.height?
-
+  getFrameData: (image, frame, options={}) ->
     if ImageData? and image instanceof ImageData
        frame.data = image.data
     else if (CanvasRenderingContext2D? and image instanceof CanvasRenderingContext2D) or (WebGLRenderingContext? and image instanceof WebGLRenderingContext)
@@ -66,6 +58,22 @@ class GIF extends EventEmitter
         frame.image = image
     else
       throw new Error 'Invalid image'
+    return frame
+
+  addFrame: (image, previousImage, options={}) ->
+    frame = {}
+    previousFrame = {}
+    frame.transparent = @options.transparent
+    for key of frameDefaults
+      frame[key] = options[key] or frameDefaults[key]
+
+    # use the images width and height for options unless already set
+    @setOption 'width', image.width unless @options.width?
+    @setOption 'height', image.height unless @options.height?
+
+    frame = @getFrameData image, frame, options
+    if previousImage
+      previousFrame = @getFrameData previousImage, previousFrame, options
 
     # find duplicates in frames.data
     index = @frames.length
@@ -76,6 +84,8 @@ class GIF extends EventEmitter
         @groups.set frame.data, [index]
 
     @frames.push frame
+    if previousFrame.data?
+      @previousFrames.set index, previousFrame
 
   render: ->
     throw new Error 'Already running' if @running
@@ -173,6 +183,10 @@ class GIF extends EventEmitter
 
     # check if one of duplicates, but not the first in group
     index = @frames.indexOf frame
+    previousFrame = null
+    if @previousFrames.has(index - 1)
+      previousFrame = @previousFrames.get(index - 1)
+
     if index > 0 and @groups.has(frame.data) and @groups.get(frame.data)[0] != index
       setTimeout =>
         @frameFinished frame, true
@@ -180,7 +194,7 @@ class GIF extends EventEmitter
       return
 
     worker = @freeWorkers.shift()
-    task = @getTask frame
+    task = @getTask frame, previousFrame
 
     @log "starting frame #{ task.index + 1 } of #{ @frames.length }"
     @activeWorkers.push worker
@@ -202,7 +216,17 @@ class GIF extends EventEmitter
 
     return @getContextData ctx
 
-  getTask: (frame) ->
+  getFrameDataForTask: (frame) ->
+    if frame.data?
+      return frame.data
+    else if frame.context?
+      return @getContextData frame.context
+    else if frame.image?
+      return @getImageData frame.image
+    else
+      throw new Error 'Invalid frame'
+
+  getTask: (frame, previousFrame) ->
     index = @frames.indexOf frame
     task =
       index: index
@@ -216,15 +240,15 @@ class GIF extends EventEmitter
       globalPalette: @options.globalPalette
       repeat: @options.repeat
       canTransfer: true
+      data: @getFrameDataForTask frame
 
-    if frame.data?
-      task.data = frame.data
-    else if frame.context?
-      task.data = @getContextData frame.context
-    else if frame.image?
-      task.data = @getImageData frame.image
-    else
-      throw new Error 'Invalid frame'
+    if @options.dispose?
+      task.dispose = @options.dispose
+
+    if previousFrame?
+      task.previousFrameData = @getFrameDataForTask previousFrame
+      if index % 10 == 0
+        console.log "Are frames same :", task.previousFrameData == task.data, task.previousFrameData, task.data
 
     return task
 
