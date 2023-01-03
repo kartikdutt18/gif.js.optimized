@@ -106,8 +106,21 @@ function GIFEncoder(width, height) {
   this.globalPalette = false;
   this.transIndexValue = Math.pow(2, this.palSize + 1) - 1;
 
+  this.applyCropOptimization = false;
+  this.xOffset = 0;
+  this.yOffset = 0;
+  this.yEnd = this.height - 1;
+  this.xEnd = this.width - 1;
+
   this.out = new ByteArray();
 }
+
+/*
+  Sets the value for applyCropOptimization.
+*/
+GIFEncoder.prototype.setApplyCropOptimization = function (optimize) {
+  this.applyCropOptimization = optimize;
+};
 
 /*
   Sets the delay time between each frame, or changes it for subsequent frames
@@ -279,6 +292,9 @@ GIFEncoder.prototype.analyzePixels = function (previousFramePixels) {
     );
   } else {
     this.indexPixels(previousFramePixels);
+    if (this.applyCropOptimization && previousFramePixels) {
+      this.cropIndexedPixels();
+    }
   }
 
   this.pixels = null;
@@ -320,9 +336,77 @@ GIFEncoder.prototype.indexPixels = function (previousFrame) {
     this.usedEntry[index] = true;
     this.indexedPixels[j] = index;
   }
-
-  console.log("Percentage pixels common in the frame", pixelsSameInTheFrame / nPix)
 };
+
+GIFEncoder.prototype.cropIndexedPixels = function() {
+  // Crop Top.
+  while (this.yOffset < this.yEnd) {
+    var isTransparent = true;
+    for (var i = 0; i < this.width; i++) {
+      if (this.indexedPixels[this.width * this.yOffset + i] !== this.transIndexValue) {
+        isTransparent = false;
+        break;
+      }
+    }
+
+    if (!isTransparent) {
+      break;
+    }
+
+    this.yOffset++;
+  }
+
+  // bottom cropping.
+  while (this.yEnd > this.yOffset) {
+    var isTransparent = true;
+    for (var i = 0; i < this.width; i++) {
+      if (this.indexedPixels[this.width * this.yEnd + i]  !== this.transIndexValue) {
+        isTransparent = false;
+        break;
+      }
+    }
+
+    if (!isTransparent) {
+      break;
+    }
+
+    this.yEnd--;
+  }
+
+  while (this.xOffset < this.xEnd) {
+    var isTransparent = true;
+    for (var i = this.yOffset; i < this.yEnd; i++) {
+      if (this.indexedPixels[this.width * i + this.xOffset] !== this.transIndexValue) {
+        isTransparent = false;
+        break;
+      }
+    }
+
+    if (!isTransparent) {
+      break;
+    }
+
+    this.xOffset++;
+  }
+
+  while (this.xEnd > this.xOffset) {
+    var isTransparent = true;
+    for (var i = this.yOffset; i < this.yEnd; i++) {
+      if (this.indexedPixels[this.width * i + this.xEnd] !== this.transIndexValue) {
+        isTransparent = false;
+        break;
+      }
+    }
+
+    if (!isTransparent) {
+      break;
+    }
+
+    this.xEnd--;
+  }
+
+  return;
+}
 
 /*
   Taken from http://jsbin.com/iXofIji/2/edit by PAEz
@@ -529,11 +613,13 @@ GIFEncoder.prototype.writeGraphicCtrlExt = function () {
   Writes Image Descriptor
 */
 GIFEncoder.prototype.writeImageDesc = function () {
+  var height = this.yEnd - this.yOffset + 1;
+  var width = this.xEnd - this.xOffset + 1;
   this.out.writeByte(0x2c); // image separator
-  this.writeShort(0); // image position x,y = 0,0
-  this.writeShort(0);
-  this.writeShort(this.width); // image size
-  this.writeShort(this.height);
+  this.writeShort(this.xOffset); // image position x,y = 0,0
+  this.writeShort(this.yOffset);
+  this.writeShort(width); // image size
+  this.writeShort(height);
 
   // packed fields
   if (this.firstFrame || this.globalPalette) {
@@ -603,10 +689,22 @@ GIFEncoder.prototype.writeShort = function (pValue) {
   Encodes and writes pixel data
 */
 GIFEncoder.prototype.writePixels = function () {
+  // trim indexedPixels here.
+  var height = this.yEnd - this.yOffset + 1;
+  var width = this.xEnd - this.xOffset + 1;
+  var indexedPixels = new Uint8Array(width * height);
+  var curOffset = 0;
+  for (var i = this.yOffset; i <= this.yEnd; i++) {
+    for (var j = this.xOffset; j <= this.xEnd; j++) {
+      indexedPixels[curOffset] = this.indexedPixels[i * this.width + j];
+      curOffset++;
+    }
+  }
+
   var enc = new LZWEncoder(
-    this.width,
-    this.height,
-    this.indexedPixels,
+    width,
+    height,
+    indexedPixels,
     this.colorDepth
   );
   enc.encode(this.out);

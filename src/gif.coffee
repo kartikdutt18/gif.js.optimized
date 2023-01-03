@@ -17,6 +17,7 @@ class GIF extends EventEmitter
   frameDefaults =
     delay: 500 # ms
     copy: false
+    applyCropOptimization: false
 
   constructor: (options) ->
     @running = false
@@ -241,14 +242,13 @@ class GIF extends EventEmitter
       repeat: @options.repeat
       canTransfer: true
       data: @getFrameDataForTask frame
+      applyCropOptimization: @options.applyCropOptimization
 
     if @options.dispose?
       task.dispose = @options.dispose
 
     if previousFrame?
       task.previousFrameData = @getFrameDataForTask previousFrame
-      if index % 10 == 0
-        console.log "Are frames same :", task.previousFrameData == task.data, task.previousFrameData, task.data
 
     return task
 

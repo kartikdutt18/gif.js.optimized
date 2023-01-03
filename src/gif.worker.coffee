@@ -11,6 +11,7 @@ renderFrame = (frame) ->
   if frame.dispose?
     encoder.setDispose frame.dispose
 
+  encoder.setApplyCropOptimization frame.applyCropOptimization
   previousFrame = if frame.previousFrameData then frame.previousFrameData else null
   encoder.setTransparent frame.transparent
   encoder.setRepeat frame.repeat
