@@ -107,6 +107,8 @@ function GIFEncoder(width, height) {
   this.transIndexValue = Math.pow(2, this.palSize + 1) - 1;
 
   this.applyCropOptimization = false;
+  this.applyTransparencyOptimization = false;
+  this.transparencyDifferenceThreshold = 1;
   this.xOffset = 0;
   this.yOffset = 0;
   this.yEnd = this.height - 1;
@@ -120,6 +122,20 @@ function GIFEncoder(width, height) {
 */
 GIFEncoder.prototype.setApplyCropOptimization = function (optimize) {
   this.applyCropOptimization = optimize;
+};
+
+/*
+  Sets the value for applyTransparencyOptimization.
+*/
+GIFEncoder.prototype.setApplyTransparencyOptimization = function (optimize) {
+  this.applyTransparencyOptimization = optimize;
+};
+
+/*
+  Sets the value for applyTransparencyOptimization.
+*/
+GIFEncoder.prototype.setTransparencyDifferenceThreshold = function (transparencyDifferenceThreshold) {
+  this.transparencyDifferenceThreshold = transparencyDifferenceThreshold;
 };
 
 /*
@@ -186,7 +202,7 @@ GIFEncoder.prototype.addFrame = function (imageData, previousImageData) {
 
   this.getImagePixels(); // convert to correct format if necessary
   var previousFramePixels = null;
-  if (previousImageData) {
+  if (this.applyTransparencyOptimization && previousImageData) {
     previousFramePixels = getImagePixelsFromFrame(previousImageData, this.width, this.height);
   }
 
@@ -315,12 +331,10 @@ GIFEncoder.prototype.indexPixels = function (previousFrame) {
   var nPix = this.pixels.length / 3;
   this.indexedPixels = new Uint8Array(nPix);
   var k = 0;
-  var pixelsSameInTheFrame = 0
   for (var j = 0; j < nPix; j++) {
     var index = -1;
     // Only execute if transparent option available.
-    if (previousFrame && getRGBDistance(this.pixels, previousFrame, k) < 1) {
-      pixelsSameInTheFrame = pixelsSameInTheFrame + 1
+    if (this.applyTransparencyOptimization && previousFrame && getRGBDistance(this.pixels, previousFrame, k) < this.transparencyDifferenceThreshold) {
       index = this.transIndexValue;
       k = k + 3
     }

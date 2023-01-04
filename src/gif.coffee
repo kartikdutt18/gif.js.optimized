@@ -18,6 +18,8 @@ class GIF extends EventEmitter
     delay: 500 # ms
     copy: false
     applyCropOptimization: false
+    transparencyDifferenceThreshold: 1
+    applyTransparencyOptimization: false
 
   constructor: (options) ->
     @running = false
@@ -73,7 +75,7 @@ class GIF extends EventEmitter
     @setOption 'height', image.height unless @options.height?
 
     frame = @getFrameData image, frame, options
-    if previousImage
+    if @options.applyTransparencyOptimization && previousImage?
       previousFrame = @getFrameData previousImage, previousFrame, options
 
     # find duplicates in frames.data
