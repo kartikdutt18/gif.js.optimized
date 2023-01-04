@@ -695,10 +695,14 @@ GIFEncoder.prototype.writePixels = function () {
   var indexedPixels = new Uint8Array(width * height);
   var curOffset = 0;
   for (var i = this.yOffset; i <= this.yEnd; i++) {
-    for (var j = this.xOffset; j <= this.xEnd; j++) {
-      indexedPixels[curOffset] = this.indexedPixels[i * this.width + j];
-      curOffset++;
-    }
+    indexedPixels.set(
+      this.indexedPixels.slice(
+        i * this.width + this.xOffset,
+        i * this.width + this.xOffset + width
+      ),
+      curOffset
+    );
+    curOffset += width;
   }
 
   var enc = new LZWEncoder(
