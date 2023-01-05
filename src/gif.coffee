@@ -20,6 +20,7 @@ class GIF extends EventEmitter
     applyCropOptimization: false
     transparencyDifferenceThreshold: 1
     applyTransparencyOptimization: false
+    dispose: -1
 
   constructor: (options) ->
     @running = false
@@ -246,9 +247,8 @@ class GIF extends EventEmitter
       data: @getFrameDataForTask frame
       applyCropOptimization: @options.applyCropOptimization
       transparencyDifferenceThreshold: @options.transparencyDifferenceThreshold
-
-    if @options.dispose?
-      task.dispose = @options.dispose
+      dispose: @options.dispose
+      applyTransparencyOptimization: @options.applyTransparencyOptimization
 
     if previousFrame?
       task.previousFrameData = @getFrameDataForTask previousFrame

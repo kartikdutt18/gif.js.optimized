@@ -8,9 +8,7 @@ renderFrame = (frame) ->
   else
     encoder.firstFrame = false
 
-  if frame.dispose?
-    encoder.setDispose frame.dispose
-
+  encoder.setDispose frame.dispose
   encoder.setTransparencyDifferenceThreshold frame.transparencyDifferenceThreshold
   encoder.setApplyTransparencyOptimization frame.applyTransparencyOptimization
   encoder.setApplyCropOptimization frame.applyCropOptimization
