@@ -99,7 +99,7 @@ function GIFEncoder(width, height) {
   this.neuQuant = null; // NeuQuant instance that was used to generate this.colorTab.
   this.usedEntry = new Array(); // active palette entries
   this.palSize = 7; // color table size (bits-1)
-  this.dispose = 1; // disposal code (-1 = use default)
+  this.dispose = -1; // disposal code (-1 = use default)
   this.firstFrame = true;
   this.sample = 10; // default sample interval for quantizer
   this.dither = false; // default dithering
@@ -107,6 +107,8 @@ function GIFEncoder(width, height) {
   this.transIndexValue = Math.pow(2, this.palSize + 1) - 1;
 
   this.applyCropOptimization = false;
+  this.transparencyDifferenceThreshold = 1;
+  this.applyTransparencyOptimization = false;
   this.xOffset = 0;
   this.yOffset = 0;
   this.yEnd = this.height - 1;
@@ -114,6 +116,20 @@ function GIFEncoder(width, height) {
 
   this.out = new ByteArray();
 }
+
+/*
+  Sets the value for applyTransparencyOptimization.
+*/
+GIFEncoder.prototype.setApplyTransparencyOptimization = function (optimize) {
+  this.applyTransparencyOptimization = optimize;
+};
+
+/*
+  Sets the value for transparencyDifferenceThreshold.
+*/
+GIFEncoder.prototype.setTransparencyDifferenceThreshold = function (threshold) {
+  this.transparencyDifferenceThreshold = threshold;
+};
 
 /*
   Sets the value for applyCropOptimization.
@@ -279,7 +295,7 @@ GIFEncoder.prototype.writeHeader = function () {
 */
 GIFEncoder.prototype.analyzePixels = function (previousFramePixels) {
   if (!this.colorTab) {
-    this.neuQuant = new NeuQuant(this.pixels, this.sample);
+    this.neuQuant = new NeuQuant(this.pixels, this.sample, true);
     this.neuQuant.buildColormap(); // create reduced palette
     this.colorTab = this.neuQuant.getColormap();
   }
@@ -302,7 +318,7 @@ GIFEncoder.prototype.analyzePixels = function (previousFramePixels) {
   this.palSize = 7;
 
   // get closest match to transparent color if specified
-  if (this.transparent !== null) {
+  if (this.transparent !== null || this.applyTransparencyOptimization) {
     this.transIndex = this.transIndexValue;
   }
 };
@@ -319,7 +335,7 @@ GIFEncoder.prototype.indexPixels = function (previousFrame) {
   for (var j = 0; j < nPix; j++) {
     var index = -1;
     // Only execute if transparent option available.
-    if (previousFrame && getRGBDistance(this.pixels, previousFrame, k) < 1) {
+    if (previousFrame && getRGBDistance(this.pixels, previousFrame, k) < this.transparencyDifferenceThreshold) {
       pixelsSameInTheFrame = pixelsSameInTheFrame + 1
       index = this.transIndexValue;
       k = k + 3
@@ -589,6 +605,10 @@ GIFEncoder.prototype.writeGraphicCtrlExt = function () {
   } else {
     transp = 1;
     disp = 2; // force clear if using transparent color
+  }
+
+  if (this.applyTransparencyOptimization) {
+    disp = 1;
   }
 
   if (this.dispose >= 0) {

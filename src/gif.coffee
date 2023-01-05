@@ -18,6 +18,8 @@ class GIF extends EventEmitter
     delay: 500 # ms
     copy: false
     applyCropOptimization: false
+    transparencyDifferenceThreshold: 1
+    applyTransparencyOptimization: false
 
   constructor: (options) ->
     @running = false
@@ -61,7 +63,7 @@ class GIF extends EventEmitter
       throw new Error 'Invalid image'
     return frame
 
-  addFrame: (image, previousImage, options={}) ->
+  addFrame: (image, options={}) ->
     frame = {}
     previousFrame = {}
     frame.transparent = @options.transparent
@@ -73,8 +75,8 @@ class GIF extends EventEmitter
     @setOption 'height', image.height unless @options.height?
 
     frame = @getFrameData image, frame, options
-    if previousImage
-      previousFrame = @getFrameData previousImage, previousFrame, options
+    if @options.applyTransparencyOptimization and options.previousImage?
+      previousFrame = @getFrameData options.previousImage, previousFrame, options
 
     # find duplicates in frames.data
     index = @frames.length
@@ -243,6 +245,7 @@ class GIF extends EventEmitter
       canTransfer: true
       data: @getFrameDataForTask frame
       applyCropOptimization: @options.applyCropOptimization
+      transparencyDifferenceThreshold: @options.transparencyDifferenceThreshold
 
     if @options.dispose?
       task.dispose = @options.dispose

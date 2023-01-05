@@ -11,6 +11,8 @@ renderFrame = (frame) ->
   if frame.dispose?
     encoder.setDispose frame.dispose
 
+  encoder.setTransparencyDifferenceThreshold frame.transparencyDifferenceThreshold
+  encoder.setApplyTransparencyOptimization frame.applyTransparencyOptimization
   encoder.setApplyCropOptimization frame.applyCropOptimization
   previousFrame = if frame.previousFrameData then frame.previousFrameData else null
   encoder.setTransparent frame.transparent

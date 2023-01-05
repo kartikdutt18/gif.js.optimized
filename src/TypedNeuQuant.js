@@ -76,7 +76,11 @@ var minpicturebytes = (3 * prime4);
   > pixels = [r, g, b, r, g, b, r, g, b, ..]
   >
 */
-function NeuQuant(pixels, samplefac) {
+function NeuQuant(pixels, samplefac, preserveIndexForTransparentPixel) {
+  if (preserveIndexForTransparentPixel) {
+    netsize -= 1;
+    maxnetpos -=1;
+  }
   var network; // int[netsize][4]
   var netindex; // for network lookup - really 256
 
