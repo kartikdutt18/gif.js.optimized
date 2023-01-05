@@ -318,8 +318,11 @@ GIFEncoder.prototype.analyzePixels = function (previousFramePixels) {
   this.palSize = 7;
 
   // get closest match to transparent color if specified
-  if (this.transparent !== null || this.applyTransparencyOptimization) {
+  if (this.applyTransparencyOptimization) {
     this.transIndex = this.transIndexValue;
+  }
+  else if (this.transparent !== null) {
+    this.transIndex = this.findClosest(this.transparent, true);
   }
 };
 
