@@ -612,6 +612,7 @@ GIFEncoder.prototype.writeGraphicCtrlExt = function () {
 
   if (this.applyTransparencyOptimization) {
     disp = 1;
+    transp = 1;
   }
 
   if (this.dispose >= 0) {
