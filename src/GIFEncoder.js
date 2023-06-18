@@ -33,6 +33,14 @@ function getImagePixelsFromFrame(data, w, h) {
   return pixels;
 }
 
+function getL2RGBDistance(frame1, frame2, startIdx) {
+  return Math.sqrt(
+    Math.pow(frame1[startIdx] - frame2[startIdx], 2) +
+    Math.pow(frame1[startIdx + 1] - frame2[startIdx + 1], 2) +
+    Math.pow(frame1[startIdx + 2] - frame2[startIdx + 2], 2)
+  );
+}
+
 function getRGBDistance(frame1, frame2, startIdx) {
   return Math.abs(frame1[startIdx] - frame2[startIdx]) +
     Math.abs(frame1[startIdx + 1] - frame2[startIdx + 1]) +
@@ -304,13 +312,15 @@ GIFEncoder.prototype.analyzePixels = function (previousFramePixels) {
   if (this.dither) {
     this.ditherPixels(
       this.dither.replace("-serpentine", ""),
-      this.dither.match(/-serpentine/) !== null
+      this.dither.match(/-serpentine/) !== null,
+      previousFramePixels
     );
   } else {
     this.indexPixels(previousFramePixels);
-    if (this.applyCropOptimization && previousFramePixels) {
+  }
+
+  if (this.applyCropOptimization && previousFramePixels) {
       this.cropIndexedPixels();
-    }
   }
 
   this.pixels = null;
@@ -427,10 +437,7 @@ GIFEncoder.prototype.cropIndexedPixels = function() {
   return;
 }
 
-/*
-  Taken from http://jsbin.com/iXofIji/2/edit by PAEz
-*/
-GIFEncoder.prototype.ditherPixels = function (kernel, serpentine) {
+GIFEncoder.prototype.calculateAndPropogateErrorDither = function (frame, x, y, kernel, serpentine) {
   var kernels = {
     FalseFloydSteinberg: [
       [3 / 8, 1, 0],
@@ -472,6 +479,54 @@ GIFEncoder.prototype.ditherPixels = function (kernel, serpentine) {
   }
 
   var ds = kernels[kernel];
+  var direction = serpentine ? -1 : 1;
+  var index = y * width + x;
+
+  // Get original colour
+  var k = index * 3;
+  var r1 = frame[k];
+  var g1 = frame[k + 1];
+  var b1 = frame[k + 2];
+
+  // Get converted colour
+  // Gives me a value between 0 to 255 corresponding to index.
+  var idx = this.findClosestRGB(r1, g1, b1);
+  // Multiply by 3 because color tab will have r.g.b.
+  k = idx * 3;
+  var r2 = this.colorTab[k];
+  var g2 = this.colorTab[k + 1];
+  var b2 = this.colorTab[k + 2];
+
+  // calculate error.
+  var er = r1 - r2;
+  var eg = g1 - g2;
+  var eb = b1 - b2;
+
+  for (
+    var i = direction == 1 ? 0 : ds.length - 1,
+    end = direction == 1 ? ds.length : 0;
+    i !== end;
+    i += direction
+  ) {
+      var x1 = ds[i][1]; // *direction;  //  Should this by timesd by direction?..to make the kernel go in the opposite direction....got no idea....
+      var y1 = ds[i][2];
+      if (x1 + x >= 0 && x1 + x < width && y1 + y >= 0 && y1 + y < height) {
+        var d = ds[i][0];
+        k = index + x1 + y1 * width;
+        k *= 3;
+        // updated the error in data.
+        frame[k] = Math.max(0, Math.min(255, frame[k] + er * d));
+        frame[k + 1] = Math.max(0, Math.min(255, frame[k + 1] + eg * d));
+        frame[k + 2] = Math.max(0, Math.min(255, frame[k + 2] + eb * d));
+      }
+  }
+
+  return [idx, frame];
+}
+/*
+  Taken from http://jsbin.com/iXofIji/2/edit by PAEz
+*/
+GIFEncoder.prototype.ditherPixels = function (kernel, serpentine, previousFrame) {
   var index = 0,
     height = this.height,
     width = this.width,
@@ -489,43 +544,19 @@ GIFEncoder.prototype.ditherPixels = function (kernel, serpentine) {
       x += direction
     ) {
       index = y * width + x;
-      // Get original colour
-      var idx = index * 3;
-      var r1 = data[idx];
-      var g1 = data[idx + 1];
-      var b1 = data[idx + 2];
-
-      // Get converted colour
-      idx = this.findClosestRGB(r1, g1, b1);
-      this.usedEntry[idx] = true;
-      this.indexedPixels[index] = idx;
-      idx *= 3;
-      var r2 = this.colorTab[idx];
-      var g2 = this.colorTab[idx + 1];
-      var b2 = this.colorTab[idx + 2];
-
-      var er = r1 - r2;
-      var eg = g1 - g2;
-      var eb = b1 - b2;
-
-      for (
-        var i = direction == 1 ? 0 : ds.length - 1,
-          end = direction == 1 ? ds.length : 0;
-        i !== end;
-        i += direction
-      ) {
-        var x1 = ds[i][1]; // *direction;  //  Should this by timesd by direction?..to make the kernel go in the opposite direction....got no idea....
-        var y1 = ds[i][2];
-        if (x1 + x >= 0 && x1 + x < width && y1 + y >= 0 && y1 + y < height) {
-          var d = ds[i][0];
-          idx = index + x1 + y1 * width;
-          idx *= 3;
-
-          data[idx] = Math.max(0, Math.min(255, data[idx] + er * d));
-          data[idx + 1] = Math.max(0, Math.min(255, data[idx + 1] + eg * d));
-          data[idx + 2] = Math.max(0, Math.min(255, data[idx + 2] + eb * d));
+      var ditherFrameInfo = this.calculateAndPropogateErrorDither(this.pixels, x, y, kernel, serpentine);
+      this.pixels = ditherFrameInfo[1];
+      var idx = ditherFrameInfo[0];
+      if (previousFrame) {
+        var ditherFrameInfoForPreviousFrame = this.calculateAndPropogateErrorDither(previousFrame, x, y, kernel, serpentine);
+        previousFrame = ditherFrameInfoForPreviousFrame[1];
+        if (idx === ditherFrameInfoForPreviousFrame[0] || getL2RGBDistance(this.pixels, previousFrame, index * 3) < this.transparencyDifferenceThreshold) {
+          idx = this.transIndexValue;
         }
       }
+
+      this.usedEntry[idx] = true;
+      this.indexedPixels[index] = idx;
     }
   }
 };
