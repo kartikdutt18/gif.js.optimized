@@ -34,11 +34,13 @@ function getImagePixelsFromFrame(data, w, h) {
 }
 
 function getL2RGBDistance(frame1, frame2, startIdx) {
-  return Math.sqrt(
-    Math.pow(frame1[startIdx] - frame2[startIdx], 2) +
-    Math.pow(frame1[startIdx + 1] - frame2[startIdx + 1], 2) +
-    Math.pow(frame1[startIdx + 2] - frame2[startIdx + 2], 2)
-  );
+  const squareVal = function (x) {
+    return x * x;
+  };
+
+  return squareVal(frame1[startIdx] - frame2[startIdx]) +
+    squareVal(frame1[startIdx + 1] - frame2[startIdx + 1]) +
+    squareVal(frame1[startIdx + 2] - frame2[startIdx + 2]);
 }
 
 function getRGBDistance(frame1, frame2, startIdx) {
@@ -480,7 +482,7 @@ GIFEncoder.prototype.calculateAndPropogateErrorDither = function (frame, x, y, k
 
   var ds = kernels[kernel];
   var direction = serpentine ? -1 : 1;
-  var index = y * width + x;
+  var index = y * this.width + x;
 
   // Get original colour
   var k = index * 3;
@@ -510,9 +512,9 @@ GIFEncoder.prototype.calculateAndPropogateErrorDither = function (frame, x, y, k
   ) {
       var x1 = ds[i][1]; // *direction;  //  Should this by timesd by direction?..to make the kernel go in the opposite direction....got no idea....
       var y1 = ds[i][2];
-      if (x1 + x >= 0 && x1 + x < width && y1 + y >= 0 && y1 + y < height) {
+      if (x1 + x >= 0 && x1 + x < this.width && y1 + y >= 0 && y1 + y < this.height) {
         var d = ds[i][0];
-        k = index + x1 + y1 * width;
+        k = index + x1 + y1 * this.width;
         k *= 3;
         // updated the error in data.
         frame[k] = Math.max(0, Math.min(255, frame[k] + er * d));
@@ -521,7 +523,7 @@ GIFEncoder.prototype.calculateAndPropogateErrorDither = function (frame, x, y, k
       }
   }
 
-  return [idx, frame];
+  return idx;
 }
 /*
   Taken from http://jsbin.com/iXofIji/2/edit by PAEz
@@ -544,13 +546,10 @@ GIFEncoder.prototype.ditherPixels = function (kernel, serpentine, previousFrame)
       x += direction
     ) {
       index = y * width + x;
-      var ditherFrameInfo = this.calculateAndPropogateErrorDither(this.pixels, x, y, kernel, serpentine);
-      this.pixels = ditherFrameInfo[1];
-      var idx = ditherFrameInfo[0];
+      var idx = this.calculateAndPropogateErrorDither(this.pixels, x, y, kernel, serpentine);
       if (previousFrame) {
-        var ditherFrameInfoForPreviousFrame = this.calculateAndPropogateErrorDither(previousFrame, x, y, kernel, serpentine);
-        previousFrame = ditherFrameInfoForPreviousFrame[1];
-        if (idx === ditherFrameInfoForPreviousFrame[0] || getL2RGBDistance(this.pixels, previousFrame, index * 3) < this.transparencyDifferenceThreshold) {
+        var prevFrameIdx = this.calculateAndPropogateErrorDither(previousFrame, x, y, kernel, serpentine);
+        if (idx === prevFrameIdx || getL2RGBDistance(this.pixels, previousFrame, index * 3) < (this.transparencyDifferenceThreshold * this.transparencyDifferenceThreshold)) {
           idx = this.transIndexValue;
         }
       }
