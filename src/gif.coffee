@@ -28,6 +28,7 @@ class GIF extends EventEmitter
     @options = {}
     @frames = []
     @previousFrames = new Map()
+    @pendingFrameCount = 0
 
     # TODO: compare by instance and not by data
     @groups = new Map() # for [data1, data1, data2, data1] @groups[data1] == [1, 3] and @groups[data2] = [2]
@@ -38,6 +39,13 @@ class GIF extends EventEmitter
     @setOptions options
     for key, value of defaults
       @options[key] ?= value
+
+    @batchSizeForRendering = @options.workers
+    @curBatchSizeLastIndex = 0
+
+    # Spawn workers once and re-use them for all batches.
+    @spawnWorkers()
+    taskQueue = []
 
   setOption: (key, value) ->
     @options[key] = value
@@ -91,6 +99,15 @@ class GIF extends EventEmitter
     if previousFrame.data?
       @previousFrames.set index, previousFrame
 
+    if @pendingFrameCount > @batchSizeForRendering
+      # If all workers are occupied, then flush tasks to free workers.
+      if @freeWorkers.length == 0 || @taskQueue.length > 0
+        flushTasks().then ->
+          @addBatchForRendering()
+      else
+        @addBatchForRendering()
+    @emit 'progress', 1
+
   render: ->
     throw new Error 'Already running' if @running
 
@@ -101,8 +118,10 @@ class GIF extends EventEmitter
     @nextFrame = 0
     @finishedFrames = 0
 
-    @imageParts = (null for i in [0...@frames.length])
-    numWorkers = @spawnWorkers()
+    for i in [0...Math.min @pendingFrameCount, @batchSizeForRendering]
+      @imageParts.push(null)
+
+    numWorkers = @freeWorkers.length
     # we need to wait for the palette
     if @options.globalPalette == true
       @renderNextFrame()
@@ -123,6 +142,22 @@ class GIF extends EventEmitter
 
   # private
 
+  addBatchForRendering: ->
+    @curBatchSizeLastIndex = @curBatchSizeLastIndex + @batchSizeForRendering
+    task = new Promise (resolve) ->
+      setTimeout ->
+        @render()
+        @taskQueue = []
+        @resolve()
+    @taskQueue.push(task)
+
+  flushTasks: ->
+    Promise.all(@taskQueue)
+      .then () ->
+        @taskQueue = []
+      .catch (error) ->
+        throw error
+
   spawnWorkers: ->
     numWorkers = Math.min(@options.workers, @frames.length)
     [@freeWorkers.length...numWorkers].forEach (i) =>
@@ -137,9 +172,10 @@ class GIF extends EventEmitter
 
   frameFinished: (frame, duplicate) ->
     @finishedFrames++
+    @pendingFrameCount--
     if not duplicate
       @log "frame #{ frame.index + 1 } finished - #{ @activeWorkers.length } active"
-      @emit 'progress', @finishedFrames / @frames.length
+      @emit 'progress', 1
       @imageParts[frame.index] = frame
     else
       indexOfDuplicate = @frames.indexOf frame
@@ -153,7 +189,10 @@ class GIF extends EventEmitter
       @renderNextFrame() for i in [1...@freeWorkers.length] if @frames.length > 2
     if null in @imageParts
       @renderNextFrame()
-    else
+
+  flush: ->
+    @flushTasks.then ->
+      @render()
       @finishRendering()
 
   finishRendering: ->
@@ -181,12 +220,12 @@ class GIF extends EventEmitter
 
   renderNextFrame: ->
     throw new Error 'No free workers' if @freeWorkers.length is 0
-    return if @nextFrame >= @frames.length # no new frame to render
+    return if @nextFrame >= @frames.length || @nextFrame >= @imageParts.length # no new frame to render
 
-    frame = @frames[@nextFrame++]
+    index = @nextFrame++
+    frame = @frames[index]
 
     # check if one of duplicates, but not the first in group
-    index = @frames.indexOf frame
     previousFrame = null
     if @previousFrames.has(index - 1)
       previousFrame = @previousFrames.get(index - 1)
@@ -203,6 +242,9 @@ class GIF extends EventEmitter
     @log "starting frame #{ task.index + 1 } of #{ @frames.length }"
     @activeWorkers.push worker
     worker.postMessage task#, [task.data.buffer]
+    # Dispose unused memory.
+    @frames[index] = null
+    @previousFrames[index - 1] = null
 
   getContextData: (ctx) ->
     return ctx.getImageData(0, 0, @options.width, @options.height).data
