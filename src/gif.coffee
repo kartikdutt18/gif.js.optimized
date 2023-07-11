@@ -35,6 +35,7 @@ class GIF extends EventEmitter
 
     @freeWorkers = []
     @activeWorkers = []
+    @canFinish = false
 
     @setOptions options
     for key, value of defaults
@@ -45,7 +46,7 @@ class GIF extends EventEmitter
 
     # Spawn workers once and re-use them for all batches.
     @spawnWorkers()
-    taskQueue = []
+    @taskQueue = []
 
   setOption: (key, value) ->
     @options[key] = value
@@ -73,6 +74,7 @@ class GIF extends EventEmitter
     return frame
 
   addFrame: (image, options={}) ->
+    @pendingFrameCount++
     frame = {}
     previousFrame = {}
     frame.transparent = @options.transparent
@@ -102,13 +104,15 @@ class GIF extends EventEmitter
     if @pendingFrameCount > @batchSizeForRendering
       # If all workers are occupied, then flush tasks to free workers.
       if @freeWorkers.length == 0 || @taskQueue.length > 0
-        flushTasks().then ->
+        @flushTasks().then ->
           @addBatchForRendering()
       else
         @addBatchForRendering()
     @emit 'progress', 1
 
   render: ->
+    return if @pendingFrameCount == 0
+
     throw new Error 'Already running' if @running
 
     if not @options.width? or not @options.height?
@@ -143,7 +147,8 @@ class GIF extends EventEmitter
   # private
 
   addBatchForRendering: ->
-    @curBatchSizeLastIndex = @curBatchSizeLastIndex + @batchSizeForRendering
+    framesToRender = Math.min pendingFrameCount, @batchSizeForRendering
+    @curBatchSizeLastIndex = @curBatchSizeLastIndex + framesToRender
     task = new Promise (resolve) ->
       setTimeout ->
         @render()
@@ -155,6 +160,7 @@ class GIF extends EventEmitter
     Promise.all(@taskQueue)
       .then () ->
         @taskQueue = []
+        @emit 'progress', 2
       .catch (error) ->
         throw error
 
@@ -189,11 +195,15 @@ class GIF extends EventEmitter
       @renderNextFrame() for i in [1...@freeWorkers.length] if @frames.length > 2
     if null in @imageParts
       @renderNextFrame()
+    else if @canFinish
+      @finishRendering()
 
   flush: ->
-    @flushTasks.then ->
-      @render()
-      @finishRendering()
+    callback = @addBatchForRendering
+    callback2 = () :-> @canFinish = true
+    @flushTasks().then ->
+      callback2()
+      callback()
 
   finishRendering: ->
     for frame, index in @imageParts
