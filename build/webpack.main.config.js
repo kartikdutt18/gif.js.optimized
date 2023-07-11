@@ -1,15 +1,17 @@
 const config = require('./webpack.base.config');
-const merge = require('webpack-merge');
+const { merge } = require('webpack-merge');
+const path = require('path');
 
 module.exports = merge(config, {
   entry: {
-    gif: './src/gif.coffee',
-    neuquant: './src/NeuQuant.js'
+    gif: './src/gif.js',
+    neuquant: './src/NeuQuant.js',
   },
   output: {
-    path: 'dist',
+    path: path.resolve(__dirname, 'dist'),
     filename: '[name].js',
-    library: 'GIF',
-    libraryTarget: 'umd',
+    library: {
+      type: 'umd',
+    },
   },
 });

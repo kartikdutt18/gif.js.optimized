@@ -47,6 +47,7 @@ class GIF extends EventEmitter
     # Spawn workers once and re-use them for all batches.
     @spawnWorkers()
     @taskQueue = []
+    @imageParts = []
 
   setOption: (key, value) ->
     @options[key] = value
@@ -101,13 +102,16 @@ class GIF extends EventEmitter
     if previousFrame.data?
       @previousFrames.set index, previousFrame
 
-    if @pendingFrameCount > @batchSizeForRendering
+    if (@pendingFrameCount % @batchSizeForRendering) == 0
       # If all workers are occupied, then flush tasks to free workers.
+      gif = this
       if @freeWorkers.length == 0 || @taskQueue.length > 0
         @flushTasks().then ->
-          @addBatchForRendering()
+          task = gif.addBatchForRendering()
+          gif.taskQueue.push(task)
       else
-        @addBatchForRendering()
+        task = gif.addBatchForRendering()
+        gif.taskQueue.push(task)
     @emit 'progress', 1
 
   render: ->
@@ -144,23 +148,25 @@ class GIF extends EventEmitter
     @running = false
     @emit 'abort'
 
-  # private
-
   addBatchForRendering: ->
-    framesToRender = Math.min pendingFrameCount, @batchSizeForRendering
+    framesToRender = Math.min @pendingFrameCount, @batchSizeForRendering
     @curBatchSizeLastIndex = @curBatchSizeLastIndex + framesToRender
+    gif = this
     task = new Promise (resolve) ->
       setTimeout ->
-        @render()
-        @taskQueue = []
-        @resolve()
+        gif.render()
+        resolve()
     @taskQueue.push(task)
 
+  # private
+
+
   flushTasks: ->
-    Promise.all(@taskQueue)
+    gif = this
+    Promise.all(gif.taskQueue)
       .then () ->
-        @taskQueue = []
-        @emit 'progress', 2
+        gif.running = false
+        gif.taskQueue = []
       .catch (error) ->
         throw error
 
@@ -196,14 +202,19 @@ class GIF extends EventEmitter
     if null in @imageParts
       @renderNextFrame()
     else if @canFinish
+      @running = false
       @finishRendering()
+    else
+      @taskQueue = []
+      @running = false
 
   flush: ->
-    callback = @addBatchForRendering
-    callback2 = () :-> @canFinish = true
+    gif = this
     @flushTasks().then ->
-      callback2()
-      callback()
+      gif.running = false
+      gif.canFinish = true
+      gif.addBatchForRendering()
+
 
   finishRendering: ->
     for frame, index in @imageParts
