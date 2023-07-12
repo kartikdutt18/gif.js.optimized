@@ -29,7 +29,6 @@ class GIF extends EventEmitter {
     this.freeWorkers = [];
     this.activeWorkers = [];
     this.gifConfig = { ...defaultGifConfig, ...options };
-    console.log(this.gifConfig);
     // This can be more but we keep queue size fixed here so
     // that we dont have to manage task queue.
     this.queueSize = Math.max(this.gifConfig.workers, 1);
@@ -37,6 +36,7 @@ class GIF extends EventEmitter {
     this.throttler = new Throttler(this.gifConfig.workers);
     this.nextFrame = 0;
     this.imageParts = [];
+    this.previousFrame = null;
   }
 
   spawnWorkers() {
@@ -59,7 +59,6 @@ class GIF extends EventEmitter {
 
   async addFrame(image, options) {
     let frame = { ...defaultFrameConfig, ...options };
-    let previousFrame = {};
     frame.transparent = this.gifConfig.transparent;
     await new Promise((resolve) => setTimeout(resolve, 100));
 
@@ -71,20 +70,18 @@ class GIF extends EventEmitter {
     }
 
     frame = this.getFrameData(image, frame, options);
-    if (this.gifConfig.applyTransparencyOptimization && options.previousImage) {
-      previousFrame = this.getFrameData(
-        options.previousImage,
-        previousFrame,
-        options
-      );
-    }
 
     await this.throttler.wait();
     this.render(
       frame,
-      options.previousImage ? previousFrame : null,
+      this.previousFrame,
       options.isLastFrame ?? false
     );
+
+    if (this.gifConfig.applyTransparencyOptimization) {
+      this.previousFrame = frame;
+    }
+
     this.emit('progress', 0)
   }
 
@@ -143,8 +140,7 @@ class GIF extends EventEmitter {
   }
 
   getContextData(ctx) {
-    return ctx.getImageData(0, 0, this.gifConfig.width, this.gifConfig.height)
-      .data;
+    return ctx.getImageData(0, 0, this.gifConfig.width, this.gifConfig.height).data;
   }
 
   getFrameDataForTask(frame) {
