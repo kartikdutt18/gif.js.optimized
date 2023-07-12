@@ -22,7 +22,7 @@ const defaultFrameConfig = {
   isLastFrame: false,
 };
 
-// To Do: Optimize groups. Optimize previous frames, dispose unused memory.
+// To Do: Optimize previous frames, dispose unused memory.
 class GIF {
   constructor(options) {
     this.freeWorkers = [];
@@ -33,9 +33,6 @@ class GIF {
     // that we dont have to manage task queue.
     this.queueSize = Math.max(this.gifConfig.workers, 1);
     this.spawnWorkers();
-    this.frames = [];
-    this.previousFrames = [];
-    this.groups = new Map();
     this.throttler = new Throttler(this.gifConfig.workers);
     this.nextFrame = 0;
     this.imageParts = [];
@@ -44,11 +41,17 @@ class GIF {
   spawnWorkers() {
     for (let i = 0; i < this.gifConfig.workers; i++) {
       const worker = new Worker(this.gifConfig.workerScript);
-      worker.onmessage = (event) => {
-        this.activeWorkers.splice(this.activeWorkers.indexOf(worker));
+      const messageHandler = (event) => {
+        const index = this.activeWorkers.indexOf(worker);
+        if (index !== -1) {
+          this.activeWorkers.splice(index, 1);
+        }
+
         this.freeWorkers.push(worker);
-        this.frameFinished(event.data, false);
+        this.frameFinished(event.data);
       };
+
+      worker.onmessage = messageHandler;
       this.freeWorkers.push(worker);
     }
   }
@@ -68,35 +71,22 @@ class GIF {
 
     frame = this.getFrameData(image, frame, options);
     if (this.gifConfig.applyTransparencyOptimization && options.previousImage) {
-      previousFrame = this.getFrameData(options.previousImage, previousFrame, options);
-    }
-
-    console.log("HERE")
-
-    let index = this.frames.length;
-    if (index > 0 && frame.data) {
-      if (this.groups.has(frame.data)) {
-        this.groups.get(frame.data).push(index);
-      } else {
-        this.groups.set(frame.data, index);
-      }
-    }
-
-    this.frames.push(frame);
-    if (previousFrame.data) {
-      this.previousFrames.push(previousFrame);
+      previousFrame = this.getFrameData(
+        options.previousImage,
+        previousFrame,
+        options
+      );
     }
 
     await this.throttler.wait();
-    this.render();
+    this.render(
+      frame,
+      options.previousImage ? previousFrame : null,
+      options.isLastFrame ?? false
+    );
   }
 
-  render(isLastFrame = false) {
-    if (this.nextFrame > this.frames.length) {
-      // No frame to render.
-      return;
-    }
-
+  render(frame, previousFrame, isLastFrame = false) {
     if (!this.gifConfig.width || !this.gifConfig.height) {
       throw new Error("Width and height must be set prior to rendering");
     }
@@ -105,24 +95,14 @@ class GIF {
       throw new Error("No workers available");
     }
 
-    let index = this.nextFrame;
-    let frame = this.frames[index];
-    this.imageParts.push(null)
-    let previousFrame = null;
-    if (this.previousFrames.length > (index - 1))
-      previousFrame = this.previousFrames[index - 1];
-    this.nextFrame++;
-
-    if (
-      index > 0 &&
-      this.groups.has(frame.data) &&
-      this.groups.get(frame.data)[0] != index
-    ) {
-      return this.frameFinished(frame, true);
-    }
-
+    this.imageParts.push(null);
     const worker = this.freeWorkers.shift();
-    const task = this.getTask(index, frame, previousFrame, isLastFrame);
+    const task = this.getTask(
+      this.nextFrame++,
+      frame,
+      previousFrame,
+      isLastFrame
+    );
     this.activeWorkers.push(worker);
     worker.postMessage(task);
   }
@@ -176,15 +156,12 @@ class GIF {
     }
   }
 
-  frameFinished(frame, duplicate) {
-    if (!duplicate) {
-      this.imageParts[frame.index] = frame;
-    } else {
-      let indexOfFirstInGroup = this.groups.get(frame.data)[0];
-      this.imageParts[frame.index] = {
-        indexOfFirstInGroup: indexOfFirstInGroup,
-      };
+  frameFinished(frame) {
+    if (this.imageParts[frame.index] !== null) {
+      return;
     }
+
+    this.imageParts[frame.index] = frame;
 
     if (this.gifConfig.options === true && !duplicate) {
       this.gifConfig.globalPalette = frame.globalPalette;
@@ -194,14 +171,7 @@ class GIF {
   }
 
   async flush() {
-    await this.throttler.wait();
-    for (var index in this.imageParts) {
-      var frame = this.imageParts[index];
-      if (frame.indexOfFirstInGroup) {
-        this.imageParts[index] = this.imageParts[frame.indexOfFirstInGroup];
-      }
-    }
-
+    await this.throttler.ensureEmpty();
     var len = 0;
     for (var frameIndex in this.imageParts) {
       var frame = this.imageParts[frameIndex];

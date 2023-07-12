@@ -1,6 +1,6 @@
 class Condition {
   constructor() {
-    this.pending = 0;
+    this.pending = [];
     this.closed = false;
     this.inErrorState = false;
     this.error = null;

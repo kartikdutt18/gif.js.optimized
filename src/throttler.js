@@ -14,6 +14,12 @@ class Throttler {
     this.pendingCount++;
   }
 
+  async ensureEmpty() {
+    while (this.pendingCount != 0) {
+      await this.full.wait();
+    }
+  }
+
   notify() {
     this.pendingCount--;
     this.full.notifyOne();
