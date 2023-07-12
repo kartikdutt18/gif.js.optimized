@@ -1,4 +1,5 @@
 const Throttler = require("./throttler");
+const EventEmitter = require('events');
 
 const defaultGifConfig = {
   workerScript: "gif.worker.js",
@@ -22,9 +23,9 @@ const defaultFrameConfig = {
   isLastFrame: false,
 };
 
-// To Do: Optimize previous frames, dispose unused memory.
-class GIF {
+class GIF extends EventEmitter {
   constructor(options) {
+    super();
     this.freeWorkers = [];
     this.activeWorkers = [];
     this.gifConfig = { ...defaultGifConfig, ...options };
@@ -84,6 +85,7 @@ class GIF {
       options.previousImage ? previousFrame : null,
       options.isLastFrame ?? false
     );
+    this.emit('progress', 0)
   }
 
   render(frame, previousFrame, isLastFrame = false) {
@@ -111,6 +113,7 @@ class GIF {
     for (let i = 0; i < this.activeWorkers.length; i++) {
       this.activeWorkers[i].terminate();
     }
+    this.emit('abort')
   }
 
   getTask(index, frame, previousFrame, isLastFrame) {
@@ -168,6 +171,7 @@ class GIF {
     }
 
     this.throttler.notify();
+    this.emit('progress');
   }
 
   async flush() {
@@ -195,6 +199,7 @@ class GIF {
     }
 
     var image = new Blob([data], { type: "image/gif" });
+    this.emit('finished', image, data)
     return image;
   }
 
