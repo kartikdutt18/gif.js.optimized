@@ -106,7 +106,6 @@ class GIF extends EventEmitter {
     if (!task.previousFrameData) {
       worker.postMessage(task);
     } else {
-       console.log("Transfering frame", task.previousFrameData.buffer);
        worker.postMessage(task, [task.previousFrameData.buffer]);
     }
   }
